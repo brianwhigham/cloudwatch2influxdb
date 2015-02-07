@@ -77,34 +77,65 @@ foreach ($toWatch as $watch) {
                 );
             }
         }
-        $params['StartTime']     = date('Y-m-d H:i:s', time() - 14 * 86400);
-        $params['EndTime']       = date('Y-m-d H:i:s', time());
-        $params['Period']        = 3600;
-        $params['Statistics']    = $statistics;
 
+        $latest = time() - 14 * 86400;
         try {
-            $stats = $awsClient->getMetricStatistics($params);
 
-            $datapoints = array();
-
-            foreach ($stats['Datapoints'] as $point) {
-                echo "    {$metric} @ {$point['Timestamp']}     \t";
-                $thisPoint = array(
-                    'time'  => strtotime($point['Timestamp']),
-                );
-                foreach ($statistics as $stat) {
-                    $thisPoint[$stat] = (float)$point[$stat];
-                    echo "\t{$stat} => {$point[$stat]}";
-                }
-                echo "\n";
-                $datapoints[] = $thisPoint;
+            $results = $influxClient->$influxCreds['database']->query("
+                SELECT  *
+                FROM    {$columnName}
+                LIMIT 1
+            ");
+            foreach ($results as $row) {
+                $latest = $row->time;
             }
-
-            $influxDb = $influxClient->$influxCreds['database'];
-            $influxDb->insert($columnName, $datapoints);
-
         } catch (Exception $e) {
-            echo "EXCEPTION: ".$e->getMessage();
+            echo "Exception - maybe series doesn't exist for {$columnName}\n";
         }
+
+        echo "Looking for data since {$latest}\n";
+
+        $remaining = ceil((time() - $latest) / 60);
+        $page = 0;
+        $influxDb = $influxClient->$influxCreds['database'];
+
+        do {
+            echo "Requesting page {$page} with remaining={$remaining}\n";
+
+            $params['StartTime']     = date('Y-m-d H:i:s', $latest);
+            $params['EndTime']       = date('Y-m-d H:i:s', $latest + 60 * 1440);
+            $params['Period']        = 60;
+            $params['Statistics']    = $statistics;
+
+            try {
+                $stats = $awsClient->getMetricStatistics($params);
+
+                $datapoints = array();
+
+                foreach ($stats['Datapoints'] as $point) {
+                    echo "    {$metric} @ {$point['Timestamp']}     \t";
+                    $thisPoint = array(
+                        'time'  => strtotime($point['Timestamp']),
+                    );
+                    foreach ($statistics as $stat) {
+                        $thisPoint[$stat] = (float)$point[$stat];
+                        echo "\t{$stat} => {$point[$stat]}";
+                    }
+                    echo "\n";
+                    $datapoints[] = $thisPoint;
+                }
+
+                if ($datapoints) {
+                    $influxDb->insert($columnName, $datapoints);
+                }
+                $remaining -= 1440;
+                echo "Bottom of loop with remaining={$remaining}\n";
+                $latest += 60*1440;
+                $page++;
+
+            } catch (Exception $e) {
+                echo "EXCEPTION: ".$e->getMessage();
+            }
+        } while ($remaining >= 0);
     }
 }
