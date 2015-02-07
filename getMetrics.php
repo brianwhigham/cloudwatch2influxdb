@@ -24,15 +24,18 @@ if (!$influxCreds) {
     exit;
 }
 
-$region = 'us-west-1';
+if (file_exists(__DIR__.'/toWatch.php')) {
+    include __DIR__.'/toWatch.php';
+}
+
+require __DIR__.'/templates.php';
+
+if (!$toWatch) {
+    echo "nothing \$toWatch\n";
+    exit;
+}
 
 use Aws\CloudWatch\CloudWatchClient;
-
-$awsClient = CloudWatchClient::factory(array(
-    'key'       => $awsAccount['accessKey'],
-    'secret'    => $awsAccount['secretKey'],
-    'region'    => $region,
-));
 
 $influxClient = new \crodas\InfluxPHP\Client(
     $influxCreds['host'],
@@ -41,67 +44,67 @@ $influxClient = new \crodas\InfluxPHP\Client(
     $influxCreds['password']
 );
 
-$nextToken = true;
+foreach ($toWatch as $watch) {
 
-$namespace = 'AWS/ELB';
-$metricName = 'Latency';
+    $awsClient = CloudWatchClient::factory(array(
+        'key'       => $awsAccount['accessKey'],
+        'secret'    => $awsAccount['secretKey'],
+        'region'    => $watch['region'],
+    ));
 
-$params['Namespace'] = 'AWS/ELB';
-$params['MetricName'] = 'Latency';
-
-/*
-if (($dimensionName = requestValue('dimensionName')) && ($dimensionValue = requestValue('dimensionValue'))) {
-    $params['Dimensions'][] = array(
-        'Name'      => $dimensionName,
-        'Value'     => $dimensionValue,
-    );
-// Another way of doing it
-            array(
-                'Name'  => 'AutoScalingGroupName',
-                'Value' => 'My Auto Scaling Group Name',
-            ),
-}
-*/
-
-
-/*
-while ($nextToken) {
-    $iterator = $awsClient->getIterator('ListMetrics', $params);
-    foreach ($iterator as $metric) {
-        echo "{$metric['Namespace']} - {$metric['MetricName']}<br />\n";
-        foreach ($metric['Dimensions'] as $dimension) {
-            echo "&nbsp;&nbsp;{$dimension['Name']} = {$dimension['Value']}<br />\n";
+    $params = array();
+    echo "{$watch['namespace']} @ {$watch['region']} ";
+    if (!empty($params['dimensions'])) {
+        foreach ($params['dimensions'] as $name => $value) {
+            echo "[{$name}={$value}] ";
         }
     }
-    $nextToken = false;
+    echo "\n";
 
-}
-*/
+    foreach ($watch['metrics'] as $metric => $statistics) {
 
+        $columnName = "{$watch['to']}.{$metric}";
+        echo "  metric: {$metric}  => {$columnName}\n";
 
-$getMetricStatisticsParams = $params;
-$getMetricStatisticsParams['StartTime']     = date('Y-m-d H:i:s', time() - 14 * 86400);
-$getMetricStatisticsParams['EndTime']       = date('Y-m-d H:i:s', time());
-$getMetricStatisticsParams['Period']        = 3600;
-$getMetricStatisticsParams['Statistics']    = array('Average');
+        $params['Namespace'] = $watch['namespace'];
+        $params['MetricName'] = $metric;
 
-try {
-    $stats = $awsClient->getMetricStatistics($getMetricStatisticsParams);
+        if (!empty($watch['dimensions'])) {
+            foreach ($watch['dimensions'] as $dimensionName => $dimensionValue) {
+                $params['Dimensions'][] = array(
+                    'Name'      => $dimensionName,
+                    'Value'     => $dimensionValue,
+                );
+            }
+        }
+        $params['StartTime']     = date('Y-m-d H:i:s', time() - 14 * 86400);
+        $params['EndTime']       = date('Y-m-d H:i:s', time());
+        $params['Period']        = 3600;
+        $params['Statistics']    = $statistics;
 
-    $datapoints = array();
+        try {
+            $stats = $awsClient->getMetricStatistics($params);
 
-    foreach ($stats['Datapoints'] as $point) {
-        echo "{$point['Timestamp']} => {$point['Average']}\n";
-        $datapoints[] = array(
-            'time'  => strtotime($point['Timestamp']),
-            'value' => (float)($point['Average'])
-        );
+            $datapoints = array();
+
+            foreach ($stats['Datapoints'] as $point) {
+                echo "    {$metric} @ {$point['Timestamp']}     \t";
+                $thisPoint = array(
+                    'time'  => strtotime($point['Timestamp']),
+                );
+                foreach ($statistics as $stat) {
+                    $thisPoint[$stat] = (float)$point[$stat];
+                    echo "\t{$stat} => {$point[$stat]}";
+                }
+                echo "\n";
+                $datapoints[] = $thisPoint;
+            }
+
+            $influxDb = $influxClient->$influxCreds['database'];
+            $influxDb->insert($columnName, $datapoints);
+
+        } catch (Exception $e) {
+            echo "EXCEPTION: ".$e->getMessage();
+        }
     }
-
-    $influxDb = $influxClient->$influxCreds['database'];
-    $columnName = 'floatColumn';
-    $influxDb->insert($columnName, $datapoints);
-
-} catch (Exception $e) {
-    echo "EXCEPTION: ".$e->getMessage();
 }
