@@ -15,21 +15,31 @@ if (!$awsAccount) {
     exit;
 }
 
-$awsAccount = array(
-    'name'      => 'RoundSphere AWS',
-    'accessKey' => 'AKIAJSFVEUG6VOGXZ6HA',
-    'secretKey' => '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'
-);
+if (file_exists(__DIR__.'/influxCreds.php')) {
+    include __DIR__.'/influxCreds.php';
+}
+
+if (!$influxCreds) {
+    echo "Error: \$influxCreds not defined\n";
+    exit;
+}
 
 $region = 'us-west-1';
 
 use Aws\CloudWatch\CloudWatchClient;
 
-$client = CloudWatchClient::factory(array(
+$awsClient = CloudWatchClient::factory(array(
     'key'       => $awsAccount['accessKey'],
     'secret'    => $awsAccount['secretKey'],
     'region'    => $region,
 ));
+
+$influxClient = new \crodas\InfluxPHP\Client(
+    $influxCreds['host'],
+    $influxCreds['port'],
+    $influxCreds['user'],
+    $influxCreds['password']
+);
 
 $nextToken = true;
 
@@ -56,7 +66,7 @@ if (($dimensionName = requestValue('dimensionName')) && ($dimensionValue = reque
 
 /*
 while ($nextToken) {
-    $iterator = $client->getIterator('ListMetrics', $params);
+    $iterator = $awsClient->getIterator('ListMetrics', $params);
     foreach ($iterator as $metric) {
         echo "{$metric['Namespace']} - {$metric['MetricName']}<br />\n";
         foreach ($metric['Dimensions'] as $dimension) {
@@ -77,8 +87,25 @@ $getMetricStatisticsParams['Statistics']    = array('Average');
 print_r($getMetricStatisticsParams);
 
 try {
-    $stats = $client->getMetricStatistics($getMetricStatisticsParams);
+    $stats = $awsClient->getMetricStatistics($getMetricStatisticsParams);
     print_r($stats);
+
+    $influxFormat = array(
+        'name' => 'FooBar Name',
+        'columns' => array('time', "{$namespace} {$metricName}"),
+        'points' => array()
+    );
+    foreach ($stats['Datapoints'] as $point) {
+        $datapoints[] = array(
+            'time'  => strtotime($point['Timestamp']),
+            'seconds' => $point['Average']
+        );
+    }
+
+    $influxDb = $influxClient->$influxCreds['database'];
+    $influxDb->insert("{$namespace} {$metricName}", $datapoints);
+
+
 } catch (Exception $e) {
     echo "EXCEPTION: ".$e->getMessage();
 }
