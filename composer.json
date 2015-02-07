@@ -1,0 +1,7 @@
+{
+    "require": {
+        "aws/aws-sdk-php": "dev-master",
+        "guzzle/guzzle": "3.*",
+        "doctrine/cache":"dev-master"
+    }
+}

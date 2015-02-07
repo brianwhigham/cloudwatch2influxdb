@@ -1,0 +1,10 @@
+{
+  "linters": {
+    "phpcs": {
+      "type": "phpcs",
+      "include" : "(\\.php)",
+      "exclude": ["(^vendor/)"],
+      "flags": ["--standard=PSR2"]
+    }
+  }
+}
