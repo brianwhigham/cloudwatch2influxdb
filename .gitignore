@@ -1,2 +1,4 @@
 awsCreds.php
+influxCreds.php
+toWatch.php
 vendor/
