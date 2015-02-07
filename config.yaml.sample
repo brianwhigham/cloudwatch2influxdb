@@ -1,0 +1,23 @@
+---
+influxConfig:
+  -
+    host: host.name.for.your.instance
+    port: 8086
+    user: yourUsername
+    database: yourDatabase
+    password: yourPassword
+  -
+    host: host2.name.for.your.instance
+    port: 8086
+    user: secondUsername
+    database: secondDatabase
+    password: secondPassword
+awsConfig:
+  -
+    name: An optional name
+    accessKey: Your AWS Access Key
+    secretKey: Your AWS Secret Key
+  -
+    name: An optional second name
+    accessKey: Your second AWS Access Key
+    secretKey: Your second AWS Secret Key
