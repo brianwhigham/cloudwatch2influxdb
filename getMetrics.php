@@ -84,27 +84,23 @@ $getMetricStatisticsParams['StartTime']     = date('Y-m-d H:i:s', time() - 14 * 
 $getMetricStatisticsParams['EndTime']       = date('Y-m-d H:i:s', time());
 $getMetricStatisticsParams['Period']        = 3600;
 $getMetricStatisticsParams['Statistics']    = array('Average');
-print_r($getMetricStatisticsParams);
 
 try {
     $stats = $awsClient->getMetricStatistics($getMetricStatisticsParams);
-    print_r($stats);
 
-    $influxFormat = array(
-        'name' => 'FooBar Name',
-        'columns' => array('time', "{$namespace} {$metricName}"),
-        'points' => array()
-    );
+    $datapoints = array();
+
     foreach ($stats['Datapoints'] as $point) {
+        echo "{$point['Timestamp']} => {$point['Average']}\n";
         $datapoints[] = array(
             'time'  => strtotime($point['Timestamp']),
-            'seconds' => $point['Average']
+            'value' => (float)($point['Average'])
         );
     }
 
     $influxDb = $influxClient->$influxCreds['database'];
-    $influxDb->insert("{$namespace} {$metricName}", $datapoints);
-
+    $columnName = 'floatColumn';
+    $influxDb->insert($columnName, $datapoints);
 
 } catch (Exception $e) {
     echo "EXCEPTION: ".$e->getMessage();
